@@ -338,6 +338,10 @@ table.hist th{color:var(--muted);font-weight:500;border-top:0}
 .vrow:first-child{border-top:0}
 .genq{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:var(--surface)}
 .genq input{margin-top:5px}
+.qlog summary{cursor:pointer;padding:8px 2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.qlog{border-top:1px solid var(--line)} .qlog:first-child{border-top:0}
+.qli{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 10px;border-radius:8px;background:var(--surface-2)}
+.qli.ok{background:var(--good-soft)} .qli.no{background:var(--bad-soft)}
 .grade{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--surface-2)}
 .askbox{border-top:1px solid var(--line);padding-top:10px}
 .askbox summary{cursor:pointer;font-weight:700;color:var(--accent)}
@@ -468,7 +472,7 @@ const VIEWS_META = [["today","今天"],["extract","抓重點"],["photo","拍照�
 
 /* ---------- state ---------- */
 const S = {
-  cards:{}, notes:{}, readings:{}, questions:{}, meta:{activity:{}, quizzes:[]}, articles:[],
+  cards:{}, notes:{}, readings:{}, questions:{}, quizlog:{}, meta:{activity:{}, quizzes:[]}, articles:[],
   mode:"connecting", sample:null, view:"today", sheet:null, confirm:null,
   ui:{
     words:{tab:"mine", q:"", subject:"all", chapter:"all", status:"all", hq:""},
@@ -648,8 +652,8 @@ function setRate(r){
 /* ---------- storage ---------- */
 const LS_KEY="hs-notebook-v1";
 let BASE=null; const chains={};
-function loadLocal(){ try{ const j=JSON.parse(localStorage.getItem(LS_KEY)||"null"); if(j){ S.cards=j.cards||{}; S.notes=j.notes||{}; S.readings=j.readings||{}; S.questions=j.questions||{}; S.meta=Object.assign({activity:{},quizzes:[]}, j.meta||{}); } }catch(e){} }
-let lsT; function saveLocal(){ clearTimeout(lsT); lsT=setTimeout(()=>{ try{ localStorage.setItem(LS_KEY, JSON.stringify({cards:S.cards,notes:S.notes,readings:S.readings,questions:S.questions,meta:S.meta})); }catch(e){} }, 300); }
+function loadLocal(){ try{ const j=JSON.parse(localStorage.getItem(LS_KEY)||"null"); if(j){ S.cards=j.cards||{}; S.notes=j.notes||{}; S.readings=j.readings||{}; S.questions=j.questions||{}; S.quizlog=j.quizlog||{}; S.meta=Object.assign({activity:{},quizzes:[]}, j.meta||{}); } }catch(e){} }
+let lsT; function saveLocal(){ clearTimeout(lsT); lsT=setTimeout(()=>{ try{ localStorage.setItem(LS_KEY, JSON.stringify({cards:S.cards,notes:S.notes,readings:S.readings,questions:S.questions,quizlog:S.quizlog,meta:S.meta})); }catch(e){} }, 300); }
 function onWriteErr(e){
   const c=e && e.code;
   if(c==="invalid_argument") toast("沒辦法儲存：你目前可能只有檢視權限");
@@ -667,6 +671,8 @@ function putNote(n, now){ S.notes[n.id]=n; if(isDb()){ clearTimeout(noteTimers[n
 function delNote(id){ clearTimeout(noteTimers[id]); delete S.notes[id]; if(isDb()) queue("n/"+id, ()=>BASE.collection("notes").doc(id).delete()); else saveLocal(); }
 function putReading(r){ S.readings[r.id]=r; if(isDb()){ const b=plain(r); delete b.id; queue("r/"+r.id, ()=>BASE.collection("readings").doc(r.id).set(b)); } else saveLocal(); }
 function putQ(q){ S.questions[q.id]=q; if(isDb()){ const b=plain(q); delete b.id; queue("q/"+q.id, ()=>BASE.collection("questions").doc(q.id).set(b)); } else saveLocal(); }
+function putLog(r){ S.quizlog[r.id]=r; if(isDb()){ const b=plain(r); delete b.id; queue("l/"+r.id, ()=>BASE.collection("quizlog").doc(r.id).set(b)); } else saveLocal(); }
+function delLog(id){ delete S.quizlog[id]; if(isDb()) queue("l/"+id, ()=>BASE.collection("quizlog").doc(id).delete()); else saveLocal(); }
 function delQ(id){ delete S.questions[id]; if(isDb()) queue("q/"+id, ()=>BASE.collection("questions").doc(id).delete()); else saveLocal(); }
 function delReading(id){ delete S.readings[id]; if(isDb()) queue("r/"+id, ()=>BASE.collection("readings").doc(id).delete()); else saveLocal(); }
 let metaT; function putMeta(){ if(isDb()){ clearTimeout(metaT); metaT=setTimeout(()=>queue("meta", ()=>BASE.set(plain(S.meta))), 1200); } else saveLocal(); }
@@ -687,6 +693,7 @@ function startSubs(){
   const errH = e => { clearTimeout(slowT); if(e && e.code==="revoked"){ S.mode="err"; } else { S.mode="db-slow"; } setSync(); };
   BASE.collection("cards").onSnapshot(snap=>{ const o={}; for(const d of snap.docs){ o[d.id]=Object.assign({}, d.data(), {id:d.id}); } S.cards=o; if(!snap.metadata.fromCache) got.c=true; done(); render(); }, errH);
   BASE.collection("notes").onSnapshot(snap=>{ const o={}; for(const d of snap.docs){ o[d.id]=Object.assign({}, d.data(), {id:d.id}); } S.notes=o; if(!snap.metadata.fromCache) got.n=true; done(); render(); }, errH);
+  BASE.collection("quizlog").onSnapshot(snap=>{ const o={}; for(const d of snap.docs){ o[d.id]=Object.assign({}, d.data(), {id:d.id}); } S.quizlog=o; render(); }, ()=>{});
   BASE.collection("questions").onSnapshot(snap=>{ const o={}; for(const d of snap.docs){ o[d.id]=Object.assign({}, d.data(), {id:d.id}); } S.questions=o; if(!snap.metadata.fromCache) got.q=true; done(); render(); }, errH);
   BASE.collection("readings").onSnapshot(snap=>{ const o={}; for(const d of snap.docs){ o[d.id]=Object.assign({}, d.data(), {id:d.id}); } S.readings=o; if(!snap.metadata.fromCache) got.r=true; done(); render(); }, errH);
   BASE.onSnapshot(snap=>{ if(snap.exists){ const d=snap.data(); S.meta={subjectList:Array.isArray(d.subjectList)?d.subjectList.map(s=>Object.assign({},s)):undefined, readSubjV1:!!d.readSubjV1, autoVocab:d.autoVocab, exams:(d.exams||[]).map(x=>Object.assign({},x,{chs:(x.chs||[]).slice()})), activity:Object.assign({}, d.activity||{}), quizzes:(d.quizzes||[]).map(q=>Object.assign({},q))}; } if(!snap.metadata.fromCache) got.m=true; done(); render(); }, errH);
@@ -1011,7 +1018,36 @@ function vQuiz(){
       <label class="f">題型<select id="qzType"><option value="mix"${Q.type==="mix"?" selected":""}>混合</option><option value="en2zh"${Q.type==="en2zh"?" selected":""}>看正面選意思</option><option value="zh2en"${Q.type==="zh2en"?" selected":""}>看意思選正面</option><option value="listen"${Q.type==="listen"?" selected":""}>聽發音選意思（英文）</option></select></label>
     </div>
     ${pool.length<4?`<div class="empty"><strong>題目不夠</strong>至少要 4 張有背面的卡片才能出選擇題。先多加幾張卡片，或改用「大學學術單字庫」。</div>`:`<div class="row"><button class="btn primary" data-act="quiz-start">開始測驗（${Math.min(10,pool.length)} 題）</button><span class="muted small">題庫共 ${pool.length} 張</span></div>`}
-  </div>`;
+  </div>${quizLogPanel()}`;
+}
+/* ---------- 測驗紀錄 ---------- */
+function saveQuizLog(source, items){
+  if(!items.length) return;
+  const mc=items.filter(x=>x.kind==="mc");
+  putLog({id:rid("l"), at:Date.now(), source, items, score:mc.filter(x=>x.pick===x.ans).length, total:mc.length});
+  const all=Object.values(S.quizlog).sort((a,b)=>b.at-a.at); all.slice(60).forEach(r=>delLog(r.id));
+}
+const isWrongItem = x => x.kind==="mc" ? x.pick!==x.ans : (x.grade && x.grade!=="對");
+function wrongItems(recs){ const seen=new Set(), out=[]; for(const r of recs) for(const x of r.items||[]) if(isWrongItem(x)){ const k=x.q+"|"+x.ans; if(!seen.has(k)){ seen.add(k); out.push(x); } } return out; }
+function replayWrong(items){
+  if(!items.length){ toast("沒有做錯的題目"); return; }
+  const Q=S.ui.quiz; Q.run=null;
+  Q.nrun={list:shuffle(items).map(x=>({kind:x.kind, q:x.q, opts:(x.opts||[]).slice(), ans:x.ans, ex:x.ex||"", say:x.say||""})), i:0, picks:[], right:0, wrong:0, written:0, s:"", sel:"", saved:true, replay:true};
+  go("quiz"); window.scrollTo(0,0);
+}
+function quizLogPanel(){
+  const L=Object.values(S.quizlog||{}).sort((a,b)=>b.at-a.at), allWrong=wrongItems(L), fmt=t=>{ const d=new Date(t); return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+  return `<div class="panel" style="max-width:720px;margin-top:16px"><h3><span>測驗紀錄</span>${allWrong.length?`<button class="btn sm bad" data-act="ql-wrong-all">做所有錯題 (${allWrong.length})</button>`:""}</h3>
+    ${L.length?`<div class="stack" style="gap:8px">${L.map(r=>{ const w=(r.items||[]).filter(isWrongItem).length, ck="qlr:"+r.id;
+      return `<details class="qlog"${S.ui.quiz.logOpen===r.id?" open":""} data-log="${esc(r.id)}"><summary><span class="small muted">${fmt(r.at)}</span> <strong>${esc(r.source)}</strong> <span class="${r.total&&r.score===r.total?"done-tag":""}">${r.total?`${r.score} / ${r.total}`:""}</span>${w?` <span class="pill st-learn">錯 ${w}</span>`:""}</summary>
+        <div class="stack" style="gap:6px;margin-top:8px">
+          <div class="row">${w?`<button class="btn sm bad" data-act="ql-wrong" data-id="${esc(r.id)}">做這次的錯題 (${w})</button>`:""}<button class="btn sm ${S.confirm===ck?"danger":"ghost"}" data-act="ql-del" data-id="${esc(r.id)}">${S.confirm===ck?"確定刪除整筆紀錄？":"刪除整筆紀錄"}</button></div>
+          ${(r.items||[]).map((x,i)=>{ const ok=x.kind==="mc"?x.pick===x.ans:null, ick="qli:"+r.id+":"+i, ansTxt=k=>{ const j=LETTERS.indexOf(k); return k?`(${k}) ${x.opts&&x.opts[j]!=null?x.opts[j]:""}`:"沒有作答"; };
+            return `<div class="qli ${ok===true?"ok":ok===false?"no":""}"><div style="min-width:0"><div class="qtext" style="margin:0">${ok===true?"✓":ok===false?"✗":"✎"} ${inl(String(x.q).split("\\n")[0])}</div>
+              <div class="small muted">${x.kind==="mc"?(ok?`你答 ${esc(ansTxt(x.pick))}`:`你答 ${esc(ansTxt(x.pick))} · 正確答案 ${esc(ansTxt(x.ans))}`):`手寫題${x.grade?` · 批改：${esc(x.grade)}`:""}`}</div></div>
+              <button class="btn sm ${S.confirm===ick?"danger":"ghost"}" data-act="ql-del-item" data-id="${esc(r.id)}" data-i="${i}" aria-label="刪除這題的紀錄">${S.confirm===ick?"確定？":"刪除"}</button></div>`; }).join("")}
+        </div></details>`; }).join("")}</div>`
+      :'<p class="muted small" style="margin:0">做完一次小測驗，每一題的作答都會記在這裡，可以一題一題刪除，也能只重做錯的題目。</p>'}</div>`;
 }
 function vNoteQuizSetup(){
   const Q=S.ui.quiz, ok=Q.subject!=="all", notes=ok?(Q.examChs?Object.values(S.notes).filter(n=>n.subject===Q.subject && Q.examChs.includes(chapOf(n))):notesForSel(Q.subject, Q.chapter)):[], src=srcOfNotes(notes);
@@ -1030,7 +1066,7 @@ function vNoteQuizSetup(){
       :!notes.length?`<div class="empty"><strong>這裡還沒有筆記</strong>先到「拍照・檔案」上傳講義，存成這個章節的筆記，就能依內容出題。</div>`
       :`<p class="muted small" style="margin:0">會讀 筆記 ${notes.length} 篇${src.pdfs.length?` · PDF ${src.pdfs.length} 份`:""}${src.imgs.length?` · 圖片 ${src.imgs.length} 張`:""}</p>
         <div class="row">${Q.nbusy?`<button class="btn" data-act="nq-stop">停止</button><span class="muted small">${esc(Q.nmsg||"")}</span>`:`<button class="btn primary" data-act="nq-run">請 Claude 出題並開始測驗</button>`}</div>`}
-  </div>`;
+  </div>${quizLogPanel()}`;
 }
 function quizPool(){
   const Q=S.ui.quiz;
@@ -1072,8 +1108,10 @@ function nextQuestion(){
   const Q=S.ui.quiz, run=Q.run; if(!run) return; run.i++;
   if(run.i>=run.qs.length){
     const qz=S.meta.quizzes||(S.meta.quizzes=[]);
-    qz.push({at:Date.now(), score:run.score, total:run.qs.length, source:Q.source==="hs"?"大學學術":(Q.subject==="all"?"我的單字卡":Q.subject)});
+    const src=Q.source==="hs"?"大學學術":(Q.subject==="all"?"我的單字卡":Q.subject);
+    qz.push({at:Date.now(), score:run.score, total:run.qs.length, source:src});
     while(qz.length>30) qz.shift(); putMeta();
+    saveQuizLog(src, run.qs.map(q=>({kind:"mc", q:(q.type==="zh2en"?q.card.back:q.card.front)+(q.type==="listen"?"（聽力題）":""), say:q.card.lang==="en"?q.card.front:"", opts:q.choices.slice(), ans:LETTERS[q.answer], pick:q.picked==null?null:LETTERS[q.picked], ex:"", cardId:q.card.builtin?"":q.card.id})));
   }
   render(true);
   const q=run.qs[run.i]; if(q && q.type==="listen") setTimeout(()=>speak(q.card.front),250);
@@ -1407,6 +1445,7 @@ async function insertNoteImages(files){
   toast(`插入了 ${ids.length} 張圖片，按「預覽」可以看排版`);
 }
 document.addEventListener("focusin", e=>{ if(e.target && (e.target.id==="noteBody" || QF[e.target.id])) e.target.dataset.touched="1"; });
+document.addEventListener("toggle", e=>{ if(e.target && e.target.classList && e.target.classList.contains("qlog")){ if(e.target.open) S.ui.quiz.logOpen=e.target.dataset.log; else if(S.ui.quiz.logOpen===e.target.dataset.log) S.ui.quiz.logOpen=null; } }, true);
 document.addEventListener("toggle", e=>{ if(e.target && e.target.classList && e.target.classList.contains("askbox")) S.ui.notes.askOpen=e.target.open; });
 document.addEventListener("toggle", e=>{ if(e.target && e.target.classList && e.target.classList.contains("qadd")) S.ui.browse.addOpen=e.target.open; if(e.target && e.target.querySelector && e.target.querySelector("#exName")) S.ui.today.exOpen=e.target.open; }, true);
 document.addEventListener("paste", e=>{
@@ -1569,7 +1608,7 @@ async function askNote(){
   try{
     let mat=`=== 筆記：${n.title||"未命名"}（${shortName(n.subject)} — ${pathLabel(chapOf(n),secOf(n))}）===\n${String(n.body||"").replace(/^\s*\[圖片:[^\]]+\]\s*$/gm,"（圖片）")}`;
     for(const f of (n.pdfs||[])){ const t=await pdfTextOf(f.id, f.name); if(t) mat+=`\n\n=== PDF：${f.name} ===\n${t}`; }
-    if(mat.length>TEXT_CAP) mat=mat.slice(0,TEXT_CAP)+"\n（後面太長，已省略）";
+    mat=fitText(mat).text;
     const images=[]; const maxI=Math.min(3,(S.imgLimits&&S.imgLimits.maxCount)||0);
     for(const id of [...noteImgIds(n.body), ...(n.photos||[])]){ if(images.length>=maxI) break; try{ images.push(await blobOf(id)); }catch(e){} }
     const rules=`你是台灣大學的助教。請根據下面這篇學生的筆記${(n.pdfs||[]).length?"和附的講義":""}回答問題。
@@ -1777,7 +1816,7 @@ async function makeQuestions(o){
   }
   for(const id of src.imgs){ if(images.length>=maxI) break; try{ images.push(await blobOf(id)); }catch(e){} }
   if(sig.aborted) throw {code:"cancelled"};
-  if(text.length>TEXT_CAP) text=text.slice(0,TEXT_CAP)+"\n（後面內容太長，已省略）";
+  text=fitText(text).text;
   const typeTxt={mix:"大約一半選擇題、一半手寫題（簡答、計算或推導）", mc:"全部是四選一選擇題", short:"全部是手寫的簡答題", calc:"全部是手寫的計算或推導題", tf:"全部是是非題（當成只有「對」「錯」兩個選項的選擇題）"}[type]||"混合";
   msg("Claude 正在出題，大約 20～90 秒…");
   const prompt=`你是台灣大學「${shortName(subj)}」課的助教。下面是學生在「${label}」的筆記和講義${images.length?`（另外附上 ${images.length} 張相關的圖片或掃描頁）`:""}。請根據這些內容，出 ${n} 題練習題，幫學生準備考試。
@@ -1834,15 +1873,15 @@ async function runNoteQuiz(){
 }
 function nQuizView(){
   const Q=S.ui.quiz, R=Q.nrun, N=R.list.length, mcN=R.list.filter(q=>q.kind==="mc").length;
-  const head=`<div class="view-head"><div><h2>小測驗</h2><p>依「${esc(shortName(R.s))} — ${esc(selLabel(R.sel))}」的筆記出題</p></div></div>`;
+  const head=`<div class="view-head"><div><h2>小測驗</h2><p>${R.replay?"重做錯題":`依「${esc(shortName(R.s))} — ${esc(selLabel(R.sel))}」的筆記出題`}</p></div></div>`;
   if(R.i>=N){
     const review=R.list.map((q,i)=>{ const pk=R.picks[i];
       return `<div class="kitem" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><div class="qtext" style="margin:0">${i+1}. ${inl(q.q.split("\n")[0])}</div>${q.kind==="mc"?`<div class="small muted">正確答案：(${q.ans}) ${inl(q.opts[LETTERS.indexOf(q.ans)])}${pk&&pk!==q.ans?` · 你選 (${pk})`:""}</div>`:`<div class="small muted">手寫題${((R.grades||{})[i]||{}).res?` · 批改：${esc(R.grades[i].res.verdict)} ${R.grades[i].res.score} 分`:""}</div>`}</div>${q.kind==="mc"?(pk===q.ans?'<span class="done-tag">答對</span>':'<span class="pill st-learn">答錯</span>'):""}</div>`; }).join("");
     return head+`<div class="fc-wrap"><div class="panel stack" style="text-align:center">
       <div class="muted">選擇題得分</div><div class="score">${R.right}<span class="muted" style="font-size:24px"> / ${mcN}</span></div>${R.written?`<p class="muted" style="margin:0">另外寫了 ${R.written} 題手寫題</p>`:""}
       <div class="klist" style="text-align:left">${review}</div>
-      <div class="row" style="justify-content:center"><button class="btn primary" data-act="nq-save"${R.saved?" disabled":""}>${R.saved?"已存進題目庫":`存進題目庫（${esc(shortName(R.s))} — ${esc(selLabel(R.sel))}）`}</button><button class="btn" data-act="nq-again">再出一份</button><button class="btn ghost" data-act="nq-end">回到設定</button></div>
-      ${R.saved?"":`<p class="muted small" style="margin:0">存進題目庫後，答錯的題目會標成錯題，之後可以到「科目」資料夾裡練習。</p>`}
+      <div class="row" style="justify-content:center">${R.replay?"":`<button class="btn primary" data-act="nq-save"${R.saved?" disabled":""}>${R.saved?"已存進題目庫":`存進題目庫（${esc(shortName(R.s))} — ${esc(selLabel(R.sel))}）`}</button>`}${R.replay?"":`<button class="btn" data-act="nq-again">再出一份</button>`}<button class="btn ghost" data-act="nq-end">回到設定</button></div>
+      ${R.saved||R.replay?"":`<p class="muted small" style="margin:0">存進題目庫後，答錯的題目會標成錯題，之後可以到「科目」資料夾裡練習。</p>`}
     </div></div>`;
   }
   const q=R.list[R.i], pk=R.picks[R.i];
@@ -2100,7 +2139,7 @@ function allFileIds(){
 }
 async function exportAll(){
   const K=S.ui.backup, withFiles=!!($("#bkFiles")||{}).checked; K.files=withFiles;
-  const data={app:"大學自學筆記本", version:1, exportedAt:new Date().toISOString(), cards:S.cards, notes:S.notes, readings:S.readings, questions:S.questions, meta:S.meta};
+  const data={app:"大學自學筆記本", version:1, exportedAt:new Date().toISOString(), cards:S.cards, notes:S.notes, readings:S.readings, questions:S.questions, quizlog:S.quizlog, meta:S.meta};
   if(withFiles){
     K.exporting=true; render(true); const files={}; let miss=0;
     for(const id of allFileIds()){ try{ files[id]=await blobToDataUrl(await blobOf(id)); }catch(e){ miss++; } }
@@ -2114,7 +2153,7 @@ async function readBackup(file){
     const j=JSON.parse(await file.text());
     if(!j || j.app!=="大學自學筆記本") throw 0;
     const obj=x=>x && typeof x==="object" && !Array.isArray(x) ? x : {};
-    S.ui.backup.pending={data:{cards:obj(j.cards), notes:obj(j.notes), readings:obj(j.readings), questions:obj(j.questions), meta:obj(j.meta), files:obj(j.files)}, name:file.name, when:String(j.exportedAt||"").slice(0,10)||"不明日期", f:Object.keys(obj(j.files)).length,
+    S.ui.backup.pending={data:{cards:obj(j.cards), notes:obj(j.notes), readings:obj(j.readings), questions:obj(j.questions), quizlog:obj(j.quizlog), meta:obj(j.meta), files:obj(j.files)}, name:file.name, when:String(j.exportedAt||"").slice(0,10)||"不明日期", f:Object.keys(obj(j.files)).length,
       n:Object.keys(obj(j.notes)).length, q:Object.keys(obj(j.questions)).length, c:Object.keys(obj(j.cards)).length, r:Object.keys(obj(j.readings)).length};
   }catch(e){ toast("這不是這個網站的備份檔"); }
   render(true);
@@ -2126,6 +2165,7 @@ async function restoreBackup(){
   Object.entries(D.notes).forEach(([k,v])=>{ if(v) putNote(fix(v,k), true); });
   Object.entries(D.readings).forEach(([k,v])=>{ if(v) putReading(fix(v,k)); });
   Object.entries(D.questions).forEach(([k,v])=>{ if(v && v.q!=null) putQ(fix(v,k)); });
+  Object.entries(D.quizlog||{}).forEach(([k,v])=>{ if(v && Array.isArray(v.items)) putLog(fix(v,k)); });
   const m=D.meta||{};
   if(Array.isArray(m.subjectList)){ const list=subjList().map(x=>Object.assign({},x)); m.subjectList.forEach(x=>{ if(x && x.name && !list.some(y=>y.name===x.name)) list.push({name:x.name, color:x.color||"gray"}); }); S.meta.subjectList=rebuild(byCat(list), list); }
   if(Array.isArray(m.exams)){ const ex=S.meta.exams||(S.meta.exams=[]); m.exams.forEach(x=>{ if(x && x.id && !ex.some(y=>y.id===x.id)) ex.push(x); }); }
@@ -2277,7 +2317,7 @@ function photoNoteBody(r){
 }
 /* PDF reading (pdf.js runs on the main thread: loading the worker script as a plain script makes pdf.js use it in-page) */
 const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
-const PDF_MAX_PAGES=60, TEXT_CAP=60000, MAX_FILES=8;
+const PDF_MAX_PAGES=100, TEXT_CAP=60000, MAX_FILES=8;
 let pdfLibP=null;
 function loadScript(src){ return new Promise((ok,no)=>{ const el=document.createElement("script"); el.src=src; el.onload=ok; el.onerror=()=>no(new Error("load")); document.head.appendChild(el); }); }
 function pdfLib(){
@@ -2326,6 +2366,13 @@ async function readPptx(file){
   }
   const text=parts.join("\n\n").trim();
   return {kind:"ppt", file, name:file.name, text, pages:slides.length, url:""};
+}
+/* keep long material under what one Claude request can carry (bytes, since Chinese is 3 bytes a character); sample evenly instead of cutting off the end */
+const PROMPT_BUDGET=200000;
+function fitText(t){
+  t=String(t||""); const enc=new TextEncoder(); if(enc.encode(t).length<=PROMPT_BUDGET) return {text:t, cut:false};
+  let max=t.length; while(max>2000 && enc.encode(spreadText(t,max)).length>PROMPT_BUDGET) max=Math.floor(max*0.85);
+  return {text:spreadText(t,max)+"\n（內容很長，以上是從頭到尾平均取出的段落）", cut:true};
 }
 function canvasBlob(c,q){ return new Promise(r=>c.toBlob(b=>r(b),"image/jpeg",q)); }
 async function renderPage(page, width){
@@ -2402,7 +2449,7 @@ async function runPhoto(){
     if(skippedPages) toast(`有 ${skippedPages} 頁沒有文字的頁面超過一次能看的數量，這次沒有一起整理`);
     const docs=P.items.filter(x=>x.kind==="doc"), ppts=P.items.filter(x=>x.kind==="ppt");
     let text=[...pdfs.filter(x=>x.text).map(x=>`=== PDF：${x.name} ===\n${x.text}`), ...ppts.map(x=>`=== 簡報：${x.name} ===\n${x.text}`), ...docs.map(x=>`=== Word：${x.name} ===\n${x.text}`), ...(P.paste.trim()?[`=== 學生貼上的文字 ===\n${P.paste.trim()}`]:[])].join("\n\n");
-    if(text.length>TEXT_CAP){ text=text.slice(0,TEXT_CAP)+"\n（後面內容太長，已省略）"; toast("檔案內容很長，只整理了前面一大部分"); }
+    { const f=fitText(text); text=f.text; if(f.cut) toast("檔案內容很長，會從頭到尾平均取重點整理"); }
     const images=[...imgs, ...pageImgs];
     if(!images.length && !text.trim()){ toast("檔案裡讀不到內容"); return; }
     if(!images.length && !pdfs.length && !docs.length && !ppts.length && !P.paste.trim()){ toast("先選照片、檔案，或貼上文字"); return; }
@@ -2532,7 +2579,7 @@ document.addEventListener("click", e=>{
   const a=e.target.closest("[data-act]");
   if(!a){ if(S.confirm){ S.confirm=null; render(true); } return; }
   const act=a.dataset.act, X=S.ui.extract;
-  if(S.confirm && !["del-card","note-del","subj-del","rd-del","tbl","nimg","nimg-x","q-del","note-pdf-rm","exam-del"].includes(act)) S.confirm=null;
+  if(S.confirm && !["del-card","note-del","subj-del","rd-del","tbl","nimg","nimg-x","q-del","note-pdf-rm","exam-del","ql-del","ql-del-item"].includes(act)) S.confirm=null;
   switch(act){
     case "go": go(a.dataset.v); break;
     case "speak": e.stopPropagation(); speak(a.dataset.t); break;
@@ -2632,11 +2679,23 @@ document.addEventListener("click", e=>{
     case "fc-end": S.ui.cards.session=null; render(true); break;
     case "quiz-start": startQuiz(); break;
     case "nq-run": runNoteQuiz(); break;
+    case "ql-wrong-all": replayWrong(wrongItems(Object.values(S.quizlog||{}))); break;
+    case "ql-wrong": { const r=S.quizlog[a.dataset.id]; if(r) replayWrong(wrongItems([r])); break; }
+    case "ql-del": { const id=a.dataset.id, ck="qlr:"+id; if(S.confirm!==ck){ S.confirm=ck; S.ui.quiz.logOpen=id; render(true); break; } S.confirm=null; delLog(id); toast("已刪除這筆紀錄"); render(true); break; }
+    case "ql-del-item": {
+      const id=a.dataset.id, i=+a.dataset.i, ck="qli:"+id+":"+i, r=S.quizlog[id]; if(!r) break;
+      S.ui.quiz.logOpen=id;
+      if(S.confirm!==ck){ S.confirm=ck; render(true); break; }
+      S.confirm=null; const items=r.items.filter((_,k)=>k!==i);
+      if(!items.length){ delLog(id); toast("這筆紀錄的題目都刪完了，整筆已移除"); }
+      else { const mc=items.filter(x=>x.kind==="mc"); putLog(Object.assign({}, r, {items, score:mc.filter(x=>x.pick===x.ans).length, total:mc.length})); toast("已刪除這題的紀錄"); }
+      render(true); break;
+    }
     case "nq-clear-exam": S.ui.quiz.examChs=null; render(true); break;
     case "nq-stop": { const Q=S.ui.quiz; if(Q.nctl) Q.nctl.abort(); break; }
     case "nq-pick": { const R=S.ui.quiz.nrun; if(!R || R.picks[R.i]) break; const q=R.list[R.i]; R.picks[R.i]=a.dataset.k; if(a.dataset.k===q.ans) R.right++; else R.wrong++; logActivity(); render(true); break; }
     case "nq-next": { const R=S.ui.quiz.nrun; if(!R) break; if(a.dataset.done){ R.written++; logActivity(); } R.i++;
-      if(R.i>=R.list.length && !R.logged){ R.logged=true; const mcN=R.list.filter(q=>q.kind==="mc").length; if(mcN){ const qz=S.meta.quizzes||(S.meta.quizzes=[]); qz.push({at:Date.now(), score:R.right, total:mcN, source:`筆記：${shortName(R.s)} ${selLabel(R.sel)}`}); while(qz.length>30) qz.shift(); putMeta(); } }
+      if(R.i>=R.list.length && !R.logged){ R.logged=true; saveQuizLog(R.replay?"錯題重做":`筆記：${shortName(R.s)} ${selLabel(R.sel)}`, R.list.map((q,i)=>Object.assign({kind:q.kind, q:q.q, opts:(q.opts||[]).slice(), ans:q.ans||"", pick:R.picks[i]||null, ex:q.ex||"", say:q.say||""}, q.kind==="written"?{grade:((R.grades||{})[i]||{}).res?R.grades[i].res.verdict:""}:{}))); const mcN=R.list.filter(q=>q.kind==="mc").length; if(mcN && !R.replay){ const qz=S.meta.quizzes||(S.meta.quizzes=[]); qz.push({at:Date.now(), score:R.right, total:mcN, source:`筆記：${shortName(R.s)} ${selLabel(R.sel)}`}); while(qz.length>30) qz.shift(); putMeta(); } }
       render(true); window.scrollTo(0,0); break; }
     case "nq-save": {
       const R=S.ui.quiz.nrun; if(!R || R.saved) break;

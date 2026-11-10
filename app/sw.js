@@ -1,5 +1,5 @@
 /* 筆記離線版 service worker */
-const CACHE="notes-offline-20261109091743";
+const CACHE="notes-offline-20261110060338";
 const CORE=["./","index.html","manifest.json","icon-180.png","icon-192.png","icon-512.png"];
 const CDN=["https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js","https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js","https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js",
